@@ -20,6 +20,9 @@ class DEuip1 extends DataExtractor {
 			
 	val egt = List("CPU", "PM", "TX", "RX").map("ener_" + _)
 	
+	
+	def extract(s:String) = idExtract(s)
+	
 	override def getExtractor(file:File):Extractor = {
 		var eg = false
 		var us = false
@@ -34,29 +37,27 @@ class DEuip1 extends DataExtractor {
 			new Parallel() {
 				override def parse(line:String):List[Data]  = {
 					//log.debug("Parsing " + line)
-					val (mid, _data) = line.span(_ != ' ')
-					val data = _data.tail
-					idExtract(mid) match {
+				val (mid, _data) = line.span(_ != ':')
+					lazy val data = _data.dropWhile(_ != ' ').tail
+					lazy val vals = data.split(" ")
+					extract(mid) match {
 						case None => List[Data]()
 						case Some(id) => {
 							//log.debug("data:  -" + data + "-")
-							if(data.startsWith("RS: ")) {								
-								rs = true
+							if(data.startsWith("RS: ") && rst.size == data.size) {								
 								//log.debug("Got RS")
-								val vals = data.split(" ")
+								rs = true
 								vals.tail.map(_.toInt).zip(rst).map(x => {new Result(id, x._2, x._1)}).toList
-							} else if(data.startsWith("US: ")) {
+							} else if(data.startsWith("US: ") && ust.size == data.size) {
 								us = true
 								//log.debug("Got US")
-								val vals = data.split(" ")
 								vals.tail.map(_.toInt).zip(ust).map(x => {new Result(id, x._2, x._1)}).toList
-							}else if(data.startsWith("EG: ")) {
+							}else if(data.startsWith("EG: ") && egt.size == data.size) {
 								eg = true
-								val vals = data.split(" ")
 								vals.tail.map(_.toInt).zip(egt).map(x => {new Result(id, x._2, x._1)}).toList
 							} else						
 								List[Data]();
-							}
+						}
 					}
 					
 				}
