@@ -19,7 +19,7 @@ class Experiment(dir: File) {
 	val log = LoggerFactory.getLogger(this.getClass)
 	//log.debug("Parsing " + dir)
 	
-	val extractors = List[DataExtractor](new DEuip1)
+	val extractors = List[DataExtractor](new DEuip1, new DEuipSim1)
 	val config =  Source.fromFile(dir.toString +"/conf.txt").getLines.map(_.split("=")).map(e => e(0) -> e(1)).toMap
 	
 	
