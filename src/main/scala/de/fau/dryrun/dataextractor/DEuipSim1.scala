@@ -9,9 +9,11 @@ import scala.util.Success
 import scala.util.Failure
 
 class DEuipSim1 extends DEuip1 {
-	
-	def extract(s:String) = {		
-		Try(s.toInt) match {
+	override val filename = "motes.log"
+		
+	override def extract(s:String) = {
+		
+		Try(s.dropRight(1).toInt) match {
 			case Failure(_) => None
 			case Success(id) => Some(id)
 		}
