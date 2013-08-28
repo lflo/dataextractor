@@ -22,13 +22,13 @@ class Snapshot(val node:Int, val time:Long, val k:String, val v:Long) extends Da
 abstract class DataExtractor {	
 	class Extractor
 	abstract case class Lines() extends Extractor { //Pass all lines
-		def parse(lines: List[String]) : List[Data]
+		def parse(lines: List[String]) : Vector[Data]
 	} 
 	abstract case class Linear() extends Extractor { //Pass lines linear
-		def parse(line:String):List[Data]
+		def parse(line:String):Vector[Data]
 	}
 	abstract case class Parallel() extends Extractor { // Pass lines in parallel
-		def parse(line:String):List[Data]
+		def parse(line:String):Vector[Data]
 	}
 	case object Dont extends Extractor //Dont parse file
 		
@@ -39,28 +39,28 @@ abstract class DataExtractor {
 	 */
 	protected def ok = true
 	
-	def extractFile(file:File):List[Data] = {
+	def extractFile(file:File):Vector[Data] = {
 		getExtractor(file) match {
 			case ec:Lines => ec.parse(Source.fromFile(file).getLines.toList)
-			case ec:Linear => Source.fromFile(file).getLines.foldLeft(List[Data]())(_ ::: ec.parse(_))
-			case ec:Parallel => Source.fromFile(file).getLines.aggregate(List[Data]())(_ ::: ec.parse(_), _ ::: _)
-			case Dont =>  List[Data]()
+			case ec:Linear => Source.fromFile(file).getLines.foldLeft(Vector[Data]())(_ ++ ec.parse(_))
+			case ec:Parallel => Source.fromFile(file).getLines.aggregate(Vector[Data]())(_ ++ ec.parse(_), _ ++ _)
+			case Dont => Vector[Data]() 
 		}
 		
 	}
 	
-	def extractDir(dir:File):List[Data] = {
-		val rv = dir.listFiles.aggregate(List[Data]())( (list, file) => {
-			list ::: {
+	def extractDir(dir:File):Vector[Data] = {
+		val rv = dir.listFiles.aggregate(Vector[Data]())( (list, file) => {
+			list ++ {
 				if(file.isDirectory) {
 					extractDir(file)
 				} else {
 					extractFile(file)
 				}
 			}
-		}, _ ::: _)
+		}, _ ++ _)
 		
-		if(ok) rv else List[Data]()
+		if(ok) rv else Vector[Data]() 
 	}
 }
 
@@ -72,7 +72,7 @@ object DataExtractor{
 	class HexString(val s: String) {
 		def hex:Int = {
 			if(s.startsWith("0x")) {
-				Integer.parseInt(s.splitAt(2)._2, 16)	
+				Integer.parseInt(s.drop(2), 16)	
 			} else {
 				Integer.parseInt(s, 16)
 			}
@@ -81,14 +81,14 @@ object DataExtractor{
 	
 	implicit def str2hex(str: String): HexString = new HexString(str)
 	
-	class MoteID(val id: String)
+	class MoteID(val id: String) extends AnyVal
 	
 	/**
 	 * Extract the id of the node 
 	 */
 	def idExtract(id:String):Option[Int] = {
 		if(id.startsWith("urn:")) {
-			return Some(id.split(":").apply(2).hex)
+			return Some(id.split(":").last.hex)
 		} 
 		//log.info("Not urn, but -"  + id + "-" )
 		None

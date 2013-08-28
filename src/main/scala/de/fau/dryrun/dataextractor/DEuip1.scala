@@ -32,31 +32,28 @@ class DEuip1 extends DataExtractor {
 		if(file.getName.equals("wisebed.log")){
 			//log.debug("New Parallel")
 			new Parallel() {
-				override def parse(line:String):List[Data]  = {
+				override def parse(line:String):Vector[Data]  = {
 					//log.debug("Parsing " + line)
-					val (mid, _data) = line.span(_ != ' ')
-					val data = _data.tail
+					val Array(mid, data) = line.split(" ", 2)
 					idExtract(mid) match {
-						case None => List[Data]()
+						case None => Vector[Data]()
 						case Some(id) => {
 							//log.debug("data:  -" + data + "-")
-							if(data.startsWith("RS: ")) {								
-								rs = true
-								//log.debug("Got RS")
-								val vals = data.split(" ")
-								vals.tail.map(_.toInt).zip(rst).map(x => {new Result(id, x._2, x._1)}).toList
-							} else if(data.startsWith("US: ")) {
-								us = true
-								//log.debug("Got US")
-								val vals = data.split(" ")
-								vals.tail.map(_.toInt).zip(ust).map(x => {new Result(id, x._2, x._1)}).toList
-							}else if(data.startsWith("EG: ")) {
-								eg = true
-								val vals = data.split(" ")
-								vals.tail.map(_.toInt).zip(egt).map(x => {new Result(id, x._2, x._1)}).toList
-							} else						
-								List[Data]();
+							val z = data.take(4) match {
+								case "RS: " => {
+									rs = true
+									rst }
+								case "US: " => {
+									us = true
+									ust }
+								case "EG: " => {
+									eg = true
+									egt }
+								case _ => Nil
 							}
+							for((k, v) <- z.to[Vector] zip data.split(" ").tail)
+								yield new Result(id, k, v.toInt)
+						}
 					}
 					
 				}
