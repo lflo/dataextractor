@@ -4,6 +4,7 @@ package de.fau.dryrun.dataextractor
 import java.io.File
 import DataExtractor._
 import org.slf4j.LoggerFactory
+import scala.util.Try
 
 class DEuip1 extends DataExtractor {
 	val log = LoggerFactory.getLogger(this.getClass)
@@ -25,51 +26,53 @@ class DEuip1 extends DataExtractor {
 	def extract(s:String) = idExtract(s)
 	val filename = "wisebed.log"
 	
-	override def getExtractor(file:File):Extractor = {
-		var eg = false
-		var us = false
-		var rs = false
+	private def zipToRes(id:Int, k:List[String], dat:String):(Boolean, Vector[Data])  = {
+		val v = dat.split(" ")
+		if(k.size != v.size) {
+			log.warn("Does not match:\n" + k.mkString(", ") + "\n" + v.mkString(", "))
+			return(false -> Vector[Result]())
+		}
+		val vInt = Try(v.map(_.toInt))
 		
-		def ok = eg && us && rs
+		if(vInt.isFailure) {
+			log.warn("Could not convert to Int: " + v.mkString(", "))
+			return(false -> Vector[Result]())
+		}
+		
+		true -> k.toVector.zip(vInt.get).map(x => {new Result(id, x._1, x._2)})
+	}
+	
+	override def getFileExtractor(file:File):FileExtractor = {
+
 		
 		//log.debug("Checking file " + file + " - Name: " + file.getName)
 				
 		if(file.getName.equals(filename)){
 			//log.debug("New Parallel")
 			new Parallel() {
+				
+				var eg = false
+				var us = false
+				var rs = false
+				
+				override def ok =  eg && us && rs
 				override def parse(line:String):Vector[Data]  = {
 					//log.debug("Parsing " + line)
-					val Array(mid, data) = line.split(" ", 2)
-					extract(mid) match {
+					val s = line.split(" ", 3)
+					if(s.size == 2) {
+						Vector[Data]()	
+					} else extract(s(0)) match {
 						case None => Vector[Data]()
 						case Some(id) => {
 							//log.debug("data:  -" + data + "-")
-							val z = data.take(4) match {
-								case "RS: " => {
-									rs = true
-									rst }
-								case "US: " => {
-									us = true
-									ust }
-								case "EG: " => {
-									eg = true
-									egt }
-								case _ => Nil
-							}
-							val dataa = data.trim.split(" ").tail
-							/*
-							if(z != Nil) {
-								log.debug("data: -" +data + "-")
-								log.debug("dataa: -" + dataa.mkString(" ") + "-")
 							
-								log.debug("SZ: "  + z.size + "/" + dataa.size)
-							}*/
-							if(z.size != dataa.size) 
-								Vector[Data]() 
-							else {
-								for((k, v) <- z.to[Vector] zip dataa)
-									yield new Result(id, k, v.toInt)
+							s(1) match {
+								case "RS:" => val(a, b) = zipToRes(id, rst, s(2)); if(a) rs = true; b
+								case "US:" => val(a, b) = zipToRes(id, ust, s(2)); if(a) us = true; b
+								case "EG" => val(a, b) = zipToRes(id, egt, s(2)); if(a) eg = true;  b
+								case _ => Vector[Data]()
 							}
+							
 						}
 					}
 					
@@ -80,5 +83,9 @@ class DEuip1 extends DataExtractor {
 			Dont
 	} 
 	
-	
+	override def apply() = new DEuip1
+}
+
+object DEuip1{
+	def apply() = new DEuip1
 }
