@@ -8,8 +8,9 @@ import org.slf4j.LoggerFactory
 import org.apache.log4j.Logger
 import org.apache.log4j.ConsoleAppender
 import org.apache.log4j.PatternLayout
-
-
+import scala.concurrent._
+import ExecutionContext.Implicits.global
+import scala.concurrent.duration.Duration
 
 
 
@@ -27,9 +28,11 @@ class Experiment(dir: File) {
 	
 	
 	
-	lazy val results:Vector[Result] = data.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result])
+	lazy val results:Vector[Result] =  Await.result(resultFuture, Duration.Inf)
+	val resultFuture = future {	data.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result])}
 	
-	lazy val resultsNodeKeyValueMap= {
+	lazy val resultsNodeKeyValueMap = Await.result(resultsNodeKeyValueMapFuture, Duration.Inf)
+	val resultsNodeKeyValueMapFuture:Future[Map[Int, Map[String, Long]]] = future {
 		val rv = collection.mutable.Map[Int, collection.mutable.Map[String, Long]]()
 		for(r <- results) {
 			val cll = rv.getOrElseUpdate(r.node, collection.mutable.Map[String, Long]())
@@ -112,15 +115,23 @@ object DataCollector {
 		
 		{
 			val outfile = new java.io.PrintWriter(new File(outname + ".res.unstacked"))
-			outfile.println((configs ::: List("node") ::: reskeys).mkString(sep))
-			for(exp <- experiments ; (node, dat) <- exp.resultsNodeKeyValueMap) {
-					outfile.println({ 
-						configs.map(exp.config.getOrElse(_, "null")) ++ 
-							node.toString	++ 
-							reskeys.map(dat.getOrElse(_, "null"))					
-					}.mkString("", sep, sep))				
-				
+			val header =  configs ::: List("node") ::: reskeys 
+			outfile.println(header.mkString(sep))
+			val data = for(exp <- experiments ; (node, dat) <- exp.resultsNodeKeyValueMap) yield {
+					val rv = configs.map(exp.config.getOrElse(_, "null")) ::: 
+							List(node.toString)	:::
+							reskeys.map(dat.getOrElse(_, "null"))
+					if(rv.size != header.size) {
+						log.error("Wring Size!")
+						log.error("RV"+rv.size +"H: " +header.size + " C: " + configs.size + " R: " + reskeys.size)
+					}
+							
+					rv
 			}
+			
+			
+			outfile.print(data.map(_.mkString(sep)).mkString("\n"))
+			
 			outfile.close
 		}
 		log.info("Done")
