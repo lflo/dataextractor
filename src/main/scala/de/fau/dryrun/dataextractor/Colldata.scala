@@ -101,7 +101,7 @@ object DataCollector {
 		//Stacked results
 		log.info("Wrinting stacked results");
 		
-		{
+		;{
 			val outfile = new java.io.PrintWriter(new File(outname + ".res.stacked"))
 			outfile.println((configs ::: List("node", "key", "value")).mkString(sep))
 			for(exp <- experiments) {
@@ -115,7 +115,7 @@ object DataCollector {
 		//Unstacked results
 		log.info("Wrinting unstacked results");
 		
-		{
+		;{
 			val outfile = new java.io.PrintWriter(new File(outname + ".res.unstacked"))
 			val header =  configs ::: List("node") ::: reskeys 
 			outfile.println(header.mkString(sep))
@@ -135,6 +135,16 @@ object DataCollector {
 			outfile.print(data.map(_.mkString(sep)).mkString("\n"))			
 			outfile.close
 		}
+		
+		log.info("Export Information to read in R")
+		
+		;{
+			val outfile = new java.io.PrintWriter(new File(outname + ".res.r_inputs"))
+			outfile.println({configs ::: List("node")}.mkString(" ") )
+			outfile.close
+			
+		}
+		
 		log.info("Done")
 		
 		
