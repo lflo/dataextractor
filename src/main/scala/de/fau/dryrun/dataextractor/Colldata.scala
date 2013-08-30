@@ -19,14 +19,21 @@ class Experiment(dir: File) {
 	val log = LoggerFactory.getLogger(this.getClass)
 	//log.debug("Parsing " + dir)
 	
-	val bal = DEuip1
-	val f = bal()
 	
-	val extractors = List[DataExtractor](new DEuip1, new DEuipSim1)
+	val extractors = 0 to 3 
+	def extractorFactory(id:Int):DataExtractor = {
+		id match {
+			case 0 => new DEuip1
+			case 1 => new DEuip1 with DEuipSim1
+			case 2 => new DEuip1_rcv
+			case 3 => new DEuip1_rcv with DEuipSim1 with DEuip1_rcvSim 
+		}
+	}
+	
 	val config = Source.fromFile(dir.toString +"/conf.txt").getLines.map(_.split("=", 2)).map(e => e(0) -> e(1)).toMap		
 	
 	val resultsf = new File(dir.toString + "/results")
-	val data = extractors.aggregate(Vector[Data]())(_ ++ _.apply().extractDir(dir), _ ++ _)
+	val data = extractors.aggregate(Vector[Data]())(_ ++ extractorFactory(_).extractDir(dir), _ ++ _)
 	
 	
 	

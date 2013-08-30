@@ -5,6 +5,8 @@ import java.io.File
 import DataExtractor._
 import org.slf4j.LoggerFactory
 import scala.util.Try
+import scala.util.Failure
+import scala.util.Success
 
 class DEuip1 extends DataExtractor {
 	val log = LoggerFactory.getLogger(this.getClass)
@@ -86,6 +88,17 @@ class DEuip1 extends DataExtractor {
 	override def apply() = new DEuip1
 }
 
-object DEuip1{
-	def apply() = new DEuip1
+trait DEuipSim1 extends DEuip1 {
+
+	override val filename = "motes.log"
+		
+		
+	override def extract(s:String) = {
+		Try(s.dropRight(1).toInt) match {
+			case Failure(_) => None
+			case Success(id) => Some(id)
+		}
+	}	
+	
 }
+
