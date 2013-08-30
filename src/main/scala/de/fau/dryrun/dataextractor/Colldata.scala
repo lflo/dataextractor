@@ -19,12 +19,14 @@ class Experiment(dir: File) {
 	val log = LoggerFactory.getLogger(this.getClass)
 	//log.debug("Parsing " + dir)
 	
-
+	val bal = DEuip1
+	val f = bal()
+	
 	val extractors = List[DataExtractor](new DEuip1, new DEuipSim1)
 	val config = Source.fromFile(dir.toString +"/conf.txt").getLines.map(_.split("=", 2)).map(e => e(0) -> e(1)).toMap		
 	
 	val resultsf = new File(dir.toString + "/results")
-	val data = extractors.aggregate(Vector[Data]())(_ ++ _.extractDir(dir), _ ++ _)
+	val data = extractors.aggregate(Vector[Data]())(_ ++ _.apply().extractDir(dir), _ ++ _)
 	
 	
 	
@@ -81,9 +83,9 @@ object DataCollector {
 		
 		
 		//Output
-		val configs = experiments.map(_.config.keySet).reduce(_ union _).toList
-		val reskeys = experiments.map(_.results.map(_.k).toSet).reduce(_ union _).toList
-		val nodes = experiments.map(_.results.map(_.node).toSet).reduce(_ union _).toList
+		val configs = experiments.map(_.config.keySet).reduce(_ union _).toList.sortWith(_.compareTo(_) < 0)
+		val reskeys = experiments.map(_.results.map(_.k).toSet).reduce(_ union _).toList.sortWith(_.compareTo(_) < 0)
+		val nodes = experiments.map(_.results.map(_.node).toSet).reduce(_ union _).toList.sortWith(_ < _)
 		
 		
 		log.info("Configs: " + configs.size)
@@ -130,11 +132,11 @@ object DataCollector {
 			}
 			
 			
-			outfile.print(data.map(_.mkString(sep)).mkString("\n"))
-			
+			outfile.print(data.map(_.mkString(sep)).mkString("\n"))			
 			outfile.close
 		}
 		log.info("Done")
+		
 		
 	}
 

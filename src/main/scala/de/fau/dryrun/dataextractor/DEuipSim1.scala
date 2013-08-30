@@ -19,4 +19,9 @@ class DEuipSim1 extends DEuip1 {
 		}
 	}	
 	
+	override def apply() = new DEuipSim1
+}
+
+object DEuipSim1{
+	def apply() = new DEuipSim1
 }

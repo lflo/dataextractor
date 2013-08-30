@@ -20,32 +20,36 @@ class Snapshot(val node:Int, val time:Long, val k:String, val v:Long) extends Da
 
 
 abstract class DataExtractor {	
-	class Extractor
-	abstract case class Lines() extends Extractor { //Pass all lines
+	class FileExtractor {
+		def ok:Boolean = true
+	}
+	abstract case class Lines() extends FileExtractor { //Pass all lines
 		def parse(lines: List[String]) : Vector[Data]
 	} 
-	abstract case class Linear() extends Extractor { //Pass lines linear
+	abstract case class Linear() extends FileExtractor { //Pass lines linear
 		def parse(line:String):Vector[Data]
 	}
-	abstract case class Parallel() extends Extractor { // Pass lines in parallel
+	abstract case class Parallel() extends FileExtractor { // Pass lines in parallel
 		def parse(line:String):Vector[Data]
 	}
-	case object Dont extends Extractor //Dont parse file
+	case object Dont extends FileExtractor //Dont parse file
 		
-	protected def getExtractor(file:File):Extractor = Dont
+	protected def getFileExtractor(file:File):FileExtractor = Dont
 	
 	/*
 	 * This function allows to parse the file first and then decide whether this was a valid extractor
 	 */
-	protected def ok = true
+	def ok = true
 	
 	def extractFile(file:File):Vector[Data] = {
-		getExtractor(file) match {
-			case ec:Lines => ec.parse(Source.fromFile(file).getLines.toList)
+		val fe = getFileExtractor(file) 
+		val rv = fe match {
+			case ec:Lines => ec.parse(Source.fromFile(file).getLines.toList); 
 			case ec:Linear => Source.fromFile(file).getLines.foldLeft(Vector[Data]())(_ ++ ec.parse(_))
 			case ec:Parallel => Source.fromFile(file).getLines.aggregate(Vector[Data]())(_ ++ ec.parse(_), _ ++ _)
 			case Dont => Vector[Data]() 
 		}
+		if(fe.ok == true) rv else Vector[Data]()
 		
 	}
 	
@@ -62,6 +66,7 @@ abstract class DataExtractor {
 		
 		if(ok) rv else Vector[Data]() 
 	}
+	def apply():DataExtractor =  throw new Exception("DataExtractor has no Factory")
 }
 
 object DataExtractor{
@@ -94,5 +99,5 @@ object DataExtractor{
 		None
 	}
 	
-	
+	def apply():DataExtractor =  throw new Exception("DataExtractor has no Factory")
 }
