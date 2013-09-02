@@ -8,14 +8,27 @@ package de.fau.dryrun.dataextractor
 import java.io.File
 import scala.io.Source
 import org.slf4j.LoggerFactory
+import scala.concurrent._
+import ExecutionContext.Implicits.global
+import scala.concurrent.duration.Duration
+import scala.collection.mutable.Buffer
 
-sealed abstract class Data
-class ExpResult(val k:String, val v:Long) extends Data
-class Result(val node:Int, val k:String, val v:Long) extends Data {
-	def nkvList= List[String](node.toString, k, v.toString)
+sealed abstract class Data {
+	def stackList:List[String]
 }
-class ExpSnapshot(val time:Long, val k:String, val v:Long) extends Data
-class Snapshot(val node:Int, val time:Long, val k:String, val v:Long) extends Data
+class ExpResult(val k:String, val v:Long) extends Data {
+	def stackList = List[String](k, v.toString)
+}
+
+class Result(val node:Int, val k:String, val v:Long) extends Data {
+	def stackList = List[String](node.toString, k, v.toString)
+}
+
+
+
+//TODO
+//class ExpSnapshot(val time:Long, val k:String, val v:Long) extends Data
+//class Snapshot(val node:Int, val time:Long, val k:String, val v:Long) extends Data
 
 
 
@@ -47,6 +60,7 @@ abstract class DataExtractor {
 			case ec:Lines => ec.parse(Source.fromFile(file).getLines.toList); 
 			case ec:Linear => Source.fromFile(file).getLines.foldLeft(Vector[Data]())(_ ++ ec.parse(_))
 			case ec:Parallel => Source.fromFile(file).getLines.aggregate(Vector[Data]())(_ ++ ec.parse(_), _ ++ _)
+			//case ec:Parallel => Source.fromFile(file).getLines.foldLeft(Buffer[Data]())(_ ++ ec.parse(_)).toVector
 			case Dont => Vector[Data]() 
 		}
 		if(fe.ok == true) rv else Vector[Data]()
@@ -54,7 +68,8 @@ abstract class DataExtractor {
 	}
 	
 	def extractDir(dir:File):Vector[Data] = {
-		val rv = dir.listFiles.aggregate(Vector[Data]())( (list, file) => {
+		val files = DataExtractor.listMap.getOrElseUpdate(dir, dir.listFiles)
+		val rv = files.aggregate(Vector[Data]())( (list, file) => {
 			list ++ {
 				if(file.isDirectory) {
 					extractDir(file)
@@ -73,6 +88,7 @@ object DataExtractor{
 	import scala.language.implicitConversions
 	
 	val log = LoggerFactory.getLogger(this.getClass)
+	val listMap = collection.mutable.Map[java.io.File,Array[java.io.File]]()
 	
 	class HexString(val s: String) {
 		def hex:Int = {
@@ -100,4 +116,48 @@ object DataExtractor{
 	}
 	
 	def apply():DataExtractor =  throw new Exception("DataExtractor has no Factory")
+}
+
+
+
+
+class Experiment(dir: File) {
+	val log = LoggerFactory.getLogger(this.getClass)
+	//log.debug("Parsing " + dir)
+	
+	
+	val extractors:List[Unit => DataExtractor] = List(
+			Unit => {new DEuip1},
+			Unit => {new DEuip1 with DEuipSim1},
+			Unit => {new DEuip1_rcv},
+			Unit => {new DEuip1_rcv with DEuipSim1 with DEuip1_rcvSim}, 
+			Unit => {new DEsizes}
+	)
+	
+	val config = Source.fromFile(dir.toString +"/conf.txt").getLines.map(_.split("=", 2)).map(e => e(0) -> e(1)).toMap		
+	
+	//Handle dir with every extractor
+	val data = extractors.aggregate(Vector[Data]())(_ ++ _().extractDir(dir), _ ++ _)
+	
+	//Prepare results
+	val results:Vector[Result] =  data.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result])
+	val resultsNodeKeyValueMap = {
+		val rv = collection.mutable.Map[Int, collection.mutable.Map[String, Long]]()
+		for(r <- results) {
+			val cll = rv.getOrElseUpdate(r.node, collection.mutable.Map[String, Long]())
+			cll += (r.k -> r.v)
+		}
+		//Convert to immutable
+		rv.map(x => {x._1 -> x._2.toMap}).toMap
+	}
+	val resultNodes = {
+		results.map(_.node).toSet
+	}
+	
+	//Prepare experiment Results
+	val expResults:Vector[ExpResult] =  data.filter(_.isInstanceOf[ExpResult]).map(_.asInstanceOf[ExpResult])
+	val expResultsKeyValueMap = expResults.map(x =>  {x.k -> x.v}).toMap
+		
+	
+	//def snapshots =  data.filter(_.isInstanceOf[Snapshot]).map(_.asInstanceOf[Snapshot])
 }
