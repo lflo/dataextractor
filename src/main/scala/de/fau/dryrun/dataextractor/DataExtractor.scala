@@ -12,6 +12,7 @@ import scala.concurrent._
 import ExecutionContext.Implicits.global
 import scala.concurrent.duration.Duration
 import scala.collection.mutable.Buffer
+import collection.JavaConversions._
 
 sealed abstract class Data {
 	def stackList:List[String]
@@ -59,7 +60,7 @@ abstract class DataExtractor {
 		val rv = fe match {
 			case ec:Lines => ec.parse(Source.fromFile(file).getLines.toList); 
 			case ec:Linear => Source.fromFile(file).getLines.foldLeft(Vector[Data]())(_ ++ ec.parse(_))
-			case ec:Parallel => Source.fromFile(file).getLines.aggregate(Vector[Data]())(_ ++ ec.parse(_), _ ++ _)
+			case ec:Parallel => Source.fromFile(file).getLines.toStream.par.aggregate(Vector[Data]())(_ ++ ec.parse(_), _ ++ _)
 			//case ec:Parallel => Source.fromFile(file).getLines.foldLeft(Buffer[Data]())(_ ++ ec.parse(_)).toVector
 			case Dont => Vector[Data]() 
 		}
@@ -69,7 +70,7 @@ abstract class DataExtractor {
 	
 	def extractDir(dir:File):Vector[Data] = {
 		val files = DataExtractor.listMap.getOrElseUpdate(dir, dir.listFiles)
-		val rv = files.aggregate(Vector[Data]())( (list, file) => {
+		val rv = files.par.aggregate(Vector[Data]())( (list, file) => {
 			list ++ {
 				if(file.isDirectory) {
 					extractDir(file)
@@ -88,7 +89,7 @@ object DataExtractor{
 	import scala.language.implicitConversions
 	
 	val log = LoggerFactory.getLogger(this.getClass)
-	val listMap = collection.mutable.Map[java.io.File,Array[java.io.File]]()
+	val listMap: collection.concurrent.Map[java.io.File, Array[java.io.File]] = new java.util.concurrent.ConcurrentHashMap[java.io.File,Array[java.io.File]] 
 	
 	class HexString(val s: String) {
 		def hex:Int = {
@@ -137,7 +138,7 @@ class Experiment(dir: File) {
 	val config = Source.fromFile(dir.toString +"/conf.txt").getLines.map(_.split("=", 2)).map(e => e(0) -> e(1)).toMap		
 	
 	//Handle dir with every extractor
-	val data = extractors.aggregate(Vector[Data]())(_ ++ _().extractDir(dir), _ ++ _)
+	val data = extractors.par.aggregate(Vector[Data]())(_ ++ _().extractDir(dir), _ ++ _)
 	
 	//Prepare results
 	val results:Vector[Result] =  data.view.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result]).toVector
