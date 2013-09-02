@@ -140,7 +140,7 @@ class Experiment(dir: File) {
 	val data = extractors.aggregate(Vector[Data]())(_ ++ _().extractDir(dir), _ ++ _)
 	
 	//Prepare results
-	val results:Vector[Result] =  data.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result])
+	val results:Vector[Result] =  data.view.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result]).toVector
 	val resultsNodeKeyValueMap = {
 		val rv = collection.mutable.Map[Int, collection.mutable.Map[String, Long]]()
 		for(r <- results) {
@@ -155,7 +155,7 @@ class Experiment(dir: File) {
 	}
 	
 	//Prepare experiment Results
-	val expResults:Vector[ExpResult] =  data.filter(_.isInstanceOf[ExpResult]).map(_.asInstanceOf[ExpResult])
+	val expResults:Vector[ExpResult] =  data.view.filter(_.isInstanceOf[ExpResult]).map(_.asInstanceOf[ExpResult]).toVector
 	val expResultsKeyValueMap = expResults.map(x =>  {x.k -> x.v}).toMap
 		
 	
