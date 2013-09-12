@@ -13,41 +13,43 @@ class DEuip1_rcv extends DEuip1 {
 		if(file.getName.equals(filename)){
 			//log.debug("New Parallel")
 			new Lines() {
-				val dat = collection.mutable.Map[String, Int]()
 				override def parse(lines: List[String]) : Vector[Data] = {
 					
-					val splitlines = lines.map(_.split(" "))
-					//urn:fau:0x000a: MAC 00:12:74:00:0e:d5:30:12 Contiki 2.6 started. Node id is set to 10.
-					val idlines = splitlines.filter(x => {x.size == 12 && x(1).equals("MAC")})
-					var idmap = {for(l <- idlines) yield {
+					val splitlines = lines.map(Line.fromString).collect { case Some(l:Line) => l }
+					//1234\turn:fau:0x000a\tMAC 00:12:74:00:0e:d5:30:12 Contiki 2.6 started. Node id is set to 10.
+					var idmap = {
 						import DataExtractor._
-						val mid = extract(l(0)).get
-						val id = l(2).split(":").last.hex
-						id -> mid
-					}}.toMap
+						for(Line(time, smote, msg) <- splitlines;
+					                  splitmsg = msg.split(" ");
+							  if splitmsg.size == 11;
+							  if splitmsg(0) == "MAC";
+							  mid <- extract(smote);
+							  id = splitmsg(1).split(":").last.hex
+						) yield id -> mid
+					}.toMap
 					
 					DEuip1_rcv.backupMap ++= idmap
 					
 					//log.debug("IDmap: " + idmap.map(x => {x._1 + " " + x._2}).mkString(", ") )
 					
-					val parselines = splitlines.filter(x => {x.size == 10 && x(2).equals("recv")})
-					
-					val rcvMap = collection.mutable.Map[Int, Int]()
-					for(l <- parselines)  {
-						val src = l(9).toInt
-						val ctr = rcvMap.getOrElse(src, 0)
-						rcvMap += src -> (ctr + 1) 
-					}
-					for(key <- rcvMap.keys) if(!idmap.contains(key)) {
-						val b = getBackup(key)
-						if(b.isDefined) {
-							log.debug("Missing key  \""  + key + "\" in " + filename)
-							idmap = idmap + (key -> b.get)
-						} else {
-							log.error("Missing key  \""  + key + "\" in " + filename + " Could not Recover")
-							return Vector[Data]()
+					val rcvMap = collection.mutable.Map[Int, Int]().withDefaultValue(0)
+					val parselines = for(Line(time, smote, msg) <- splitlines;
+					                  splitmsg = msg.split(" ");
+							  if splitmsg.size == 9;
+							  if splitmsg(1) == "recv"
+						      ) rcvMap(splitmsg(8).toInt) += 1
+
+					for(key <- rcvMap.keys if(!idmap.contains(key)))
+						getBackup(key) match {
+							case Some(b) => {
+								log.debug("Missing key  \""  + key + "\" in " + filename)
+								idmap = idmap + (key -> b)
+							}
+							case None => {
+								log.error("Missing key  \""  + key + "\" in " + filename + " Could not Recover")
+								return Vector[Data]()
+							}
 						}
-					}
 					rcvMap.map(x => new Result(idmap(x._1),"meta_packrcv", x._2)).toVector
 				}
 			}

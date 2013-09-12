@@ -8,6 +8,15 @@ import scala.util.Try
 import scala.util.Failure
 import scala.util.Success
 
+case class Line(time: Long, mote: String, msg: String)
+object Line {
+	val sep = "\t"
+	def fromString(line: String)= Try {
+		val Array(time, mote, msg) = line.split(sep, 3)
+		Line(time.toLong, mote, msg)
+	}.toOption
+}
+
 class DEuip1 extends DataExtractor {
 	val log = LoggerFactory.getLogger(this.getClass)
 
@@ -60,24 +69,14 @@ class DEuip1 extends DataExtractor {
 				override def ok =  eg && us && rs
 				override def parse(line:String):Vector[Data]  = {
 					//log.debug("Parsing " + line)
-					val s = line.split(" ", 3)
-					if(s.size == 2) {
-						Vector[Data]()	
-					} else extract(s(0)) match {
-						case None => Vector[Data]()
-						case Some(id) => {
-							//log.debug("data:  -" + data + "-")
-							
-							s(1) match {
-								case "RS:" => val(a, b) = zipToRes(id, rst, s(2)); if(a) rs = true; b
-								case "US:" => val(a, b) = zipToRes(id, ust, s(2)); if(a) us = true; b
-								case "EG" => val(a, b) = zipToRes(id, egt, s(2)); if(a) eg = true;  b
-								case _ => Vector[Data]()
+					Line.fromString(line).collect {
+						case Line(time, mote, msg) =>
+							Some((extract(mote), msg.splitAt(3))) collect {
+								case (Some(id), ("RS:", d)) => val(a, b) = zipToRes(id, rst, d); if(a) rs = true; b
+								case (Some(id), ("US:", d)) => val(a, b) = zipToRes(id, ust, d); if(a) us = true; b
+								case (Some(id), ("EG ", d)) => val(a, b) = zipToRes(id, egt, d); if(a) eg = true; b
 							}
-							
-						}
-					}
-					
+					}.flatten getOrElse Vector[Data]()
 				}
 			}
 		}
@@ -92,13 +91,7 @@ trait DEuipSim1 extends DEuip1 {
 
 	override val filename = "motes.log"
 		
-		
-	override def extract(s:String) = {
-		Try(s.dropRight(1).toInt) match {
-			case Failure(_) => None
-			case Success(id) => Some(id)
-		}
-	}	
+	override def extract(s:String) = Try(s.dropRight(1).toInt).toOption
 	
 }
 
