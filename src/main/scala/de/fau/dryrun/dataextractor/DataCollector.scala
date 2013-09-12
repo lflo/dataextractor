@@ -20,7 +20,7 @@ object DataCollector {
 	val log = LoggerFactory.getLogger(this.getClass)
 
 	val sep = ", "
-		
+	val nodeStr = "node"
 	
 	def main(args: Array[String]): Unit = {
 		val DEFAULT_PATTERN_LAYOUT = "%-23d{yyyy-MM-dd HH:mm:ss,SSS} | %-30.30t | %-30.30c{1} | %-5p | %m%n"
@@ -67,7 +67,7 @@ object DataCollector {
 		log.info("Wrinting stacked results");
 		;{
 
-			val header = configs ::: List("mote", "key", "value")
+			val header = configs ::: List(nodeStr, "key", "value")
 			val oLines = for(exp <- experiments) yield{
 				val pres = configs.map(exp.config.getOrElse(_, "null")).mkString("", sep, sep)
 				for(res <- exp.results) yield {
@@ -108,7 +108,7 @@ object DataCollector {
 		//Unstacked results
 		log.info("Wrinting unstacked results");
 		;{
-			val header =  configs ::: List("node") ::: resKeys
+			val header =  configs ::: List(nodeStr) ::: resKeys
 			val olines = for(exp <- experiments ; (node, dat) <- exp.resultsNodeKeyValueMap) yield {
 					val rv:List[String] = configs.map(exp.config.getOrElse(_, "null")) ::: 
 							List(node.toString)	:::
@@ -159,7 +159,7 @@ object DataCollector {
 		log.info("Export Information to read in R")
 		;{
 			val outfile = new java.io.PrintWriter(new File(outname + ".res.r_inputs"))
-			outfile.println({configs ::: List("node")}.mkString(" ") )
+			outfile.println({configs ::: List(nodeStr)}.mkString(" ") )
 			outfile.close
 			
 		}
