@@ -72,6 +72,7 @@ class DEuip1 extends DataExtractor {
 								case "RS:" => val(a, b) = zipToRes(id, rst, s(2)); if(a) rs = true; b
 								case "US:" => val(a, b) = zipToRes(id, ust, s(2)); if(a) us = true; b
 								case "EG" => val(a, b) = zipToRes(id, egt, s(2)); if(a) eg = true;  b
+								case "EG:" => val(a, b) = zipToRes(id, egt, s(2)); if(a) eg = true;  b
 								case _ => Vector[Data]()
 							}
 							
