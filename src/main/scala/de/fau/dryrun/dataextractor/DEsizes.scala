@@ -5,7 +5,6 @@ import java.io.File
 
 class DEsizes extends DataExtractor {
 	val log = LoggerFactory.getLogger(this.getClass)
-	
 		override def getFileExtractor(file:File):FileExtractor = {
 
 		
@@ -22,6 +21,11 @@ class DEsizes extends DataExtractor {
 					 *    48470	    214	   8762	  57446	   e066	udp-server.sky
 					 * 
 					 */
+					if(lines.size < 1) {
+						log.error("Could not parse " + file + ". No content.")
+						return  Vector[Data]()
+					}
+					
 					val data = Vector("text", "data", "bss", "dec", "hex", "filename")
 					val idata =lines(0).split("\t").map(_.trim).toVector
 					if(! (idata.equals(data))) {
