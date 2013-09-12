@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 class DEuip1_rcv extends DEuip1 {
     
 	def getBackup(id:Int):Option[Int] = DEuip1_rcv.backupMap.get(id)
+	var missKeyReported = false 
 	
 	override def getFileExtractor(file:File):FileExtractor = {		
 		//log.debug("Checking file " + file + " - Name: " + file.getName)
@@ -41,7 +42,10 @@ class DEuip1_rcv extends DEuip1 {
 					for(key <- rcvMap.keys) if(!idmap.contains(key)) {
 						val b = getBackup(key)
 						if(b.isDefined) {
-							log.debug("Missing key  \""  + key + "\" in " + filename)
+							if(!missKeyReported) {
+								missKeyReported = true
+								log.debug("Missing key  \""  + key + "\" in " + filename +". No more missing keys will be reported for this file.")
+							}
 							idmap = idmap + (key -> b.get)
 						} else {
 							log.error("Missing key  \""  + key + "\" in " + filename + " Could not Recover")
