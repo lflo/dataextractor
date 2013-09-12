@@ -1,14 +1,74 @@
 package de.fau.dryrun.dataextractor
 
-
 import java.io.File
 import DataExtractor._
 import org.slf4j.LoggerFactory
 import scala.util.Try
 import scala.util.Failure
 import scala.util.Success
+import Data.NilVD
 
-class DEuip1 extends DataExtractor {
+/** Provides hex string to Int conversion */
+object HexStrings {
+	implicit class HexString(val s: String) {
+		def hex:Int = {
+			if(s.startsWith("0x")) {
+				Integer.parseInt(s.drop(2), 16)	
+			} else {
+				Integer.parseInt(s, 16)
+			}
+		}
+	}
+}
+import HexStrings._
+
+
+/** Mote ID */
+case class MoteID(id: String)
+
+
+/** Timestamped mote log message */
+case class Message(time: Long, mote: String, msg: String)
+object Message {
+	val sep = "\t"
+	def fromString(line: String) = Try {
+		val Array(time, mote, msg) = line.split(sep, 3)
+		Message(time.toLong, mote, msg)
+	}.toOption
+}
+
+
+/** Extraction of MoteID from log */
+trait MotesExtractor {
+	def extract(s:String): Option[Int]
+}
+
+/** MoteID extraction for Wisebed */
+trait WisebedExtractor extends MotesExtractor {
+	val filenamePattern = """wisebed\.log"""	
+
+	def extract(id:String) = if(id.startsWith("urn:")) Some(id.split(":").last.hex) else None
+}
+
+/** MoteID extraction for COOJA */
+trait SimulationExtractor extends MotesExtractor {
+	val filenamePattern = """motes\.log"""	
+
+	def extract(s:String) = Try(s.toInt).toOption
+}
+
+/** Extraction of mote messages */
+trait MessagesExtractor extends LinearLineExtractor { self: MotesExtractor =>
+	def parseMessage(time: Long, id: Int, msg: String): Vector[Data]
+
+	def parseLine(line: String) = Message.fromString(line).collect {
+		case Message(time, mote, msg) => extract(mote).map(id => parseMessage(time, id, msg))
+	}.flatten getOrElse NilVD
+}
+
+/** UIP statistics extractor */
+abstract class DEuip1 extends MessagesExtractor 
+		with ParallelLineExtractor with MotesExtractor with FinishExtractor with FileExtractor {
 	val log = LoggerFactory.getLogger(this.getClass)
 
 	val rst = List("tx", "rx", "reliabletx", "reliablerx", "rexmit", "acktx", "noacktx",
@@ -23,83 +83,37 @@ class DEuip1 extends DataExtractor {
 			List("drop", "recv", "sent").map("nd6_" + _)
 			
 	val egt = List("CPU", "LPM", "TX", "RX").map("ener_" + _)
-	
-	
-	def extract(s:String) = idExtract(s)
-	val filename = "wisebed.log"
-	
-	private def zipToRes(id:Int, k:List[String], dat:String):(Boolean, Vector[Data])  = {
-		val v = dat.split(" ")
-		if(k.size != v.size) {
-			log.warn("Does not match:\n" + k.mkString(", ") + "\n" + v.mkString(", "))
-			return(false -> Vector[Result]())
+
+	private def zipToRes(id:Int, keys:List[String], dat:String):Vector[Data] = {
+		val v = dat.trim.split(" ")
+		if(keys.size != v.size) {
+			log.warn("Does not match:\n" + keys.mkString(", ") + "\n" + v.mkString(", "))
+			return NilVD
 		}
-		val vInt = Try(v.map(_.toInt))
-		
-		if(vInt.isFailure) {
+
+		val vInt = Try(v.map(_.toInt)).getOrElse {
 			log.warn("Could not convert to Int: " + v.mkString(", "))
-			return(false -> Vector[Result]())
+			return NilVD
 		}
 		
-		true -> k.toVector.zip(vInt.get).map(x => {new Result(id, x._1, x._2)})
+		keys.toVector zip vInt map { case (k,v) => Result(id, k, v) }
 	}
-	
-	override def getFileExtractor(file:File):FileExtractor = {
 
-		
-		//log.debug("Checking file " + file + " - Name: " + file.getName)
-				
-		if(file.getName.equals(filename)){
-			//log.debug("New Parallel")
-			new Parallel() {
-				
-				var eg = false
-				var us = false
-				var rs = false
-				
-				override def ok =  eg && us && rs
-				override def parse(line:String):Vector[Data]  = {
-					//log.debug("Parsing " + line)
-					val s = line.split(" ", 3)
-					if(s.size == 2) {
-						Vector[Data]()	
-					} else extract(s(0)) match {
-						case None => Vector[Data]()
-						case Some(id) => {
-							//log.debug("data:  -" + data + "-")
-							
-							s(1) match {
-								case "RS:" => val(a, b) = zipToRes(id, rst, s(2)); if(a) rs = true; b
-								case "US:" => val(a, b) = zipToRes(id, ust, s(2)); if(a) us = true; b
-								case "EG" => val(a, b) = zipToRes(id, egt, s(2)); if(a) eg = true;  b
-								case "EG:" => val(a, b) = zipToRes(id, egt, s(2)); if(a) eg = true;  b
-								case _ => Vector[Data]()
-							}
-							
-						}
-					}
-					
-				}
-			}
-		}
-		else 
-			Dont
-	} 
-	
-	override def apply() = new DEuip1
+	def failed(res: Vector[Data]) = (rst ++ ust ++ egt) exists { x => res.find(_.asInstanceOf[Result].k == x).isEmpty && { println(x);true} }
+	def finish(res: Vector[Data]) = if(failed(res)) NilVD else res
+
+	def parseMessage(time: Long, id: Int, msg: String) = msg.splitAt(3) match {
+		case ("RS:", d) => zipToRes(id, rst, d)
+		case ("US:", d) => zipToRes(id, ust, d)
+		case ("EG:", d) => zipToRes(id, egt, d)
+		case ("EG ", d) => zipToRes(id, egt, d)
+		case _ => NilVD
+	}
 }
 
-trait DEuipSim1 extends DEuip1 {
+/** Wisebed UIP stat extractor */
+class DEuipWB1 extends DEuip1 with WisebedExtractor 
 
-	override val filename = "motes.log"
-		
-		
-	override def extract(s:String) = {
-		Try(s.dropRight(1).toInt) match {
-			case Failure(_) => None
-			case Success(id) => Some(id)
-		}
-	}	
-	
-}
+/** COOJA UIP stat extractor */
+class DEuipSim1 extends DEuip1 with SimulationExtractor
 

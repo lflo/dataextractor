@@ -2,66 +2,59 @@ package de.fau.dryrun.dataextractor
 
 import java.io.File
 import org.slf4j.LoggerFactory
+import Data.NilVD
+import HexStrings._
 
-class DEuip1_rcv extends DEuip1 {
+/** RPL-UDP packet reception count extractor */
+trait DEuip1_rcv extends LineExtractor with MotesExtractor with FileExtractor {
+	val log = LoggerFactory.getLogger(this.getClass)
     
 	def getBackup(id:Int):Option[Int] = DEuip1_rcv.backupMap.get(id)
-	var missKeyReported = false 
 	
-	override def getFileExtractor(file:File):FileExtractor = {		
-		//log.debug("Checking file " + file + " - Name: " + file.getName)
-				
-		if(file.getName.equals(filename)){
-			//log.debug("New Parallel")
-			new Lines() {
-				val dat = collection.mutable.Map[String, Int]()
-				override def parse(lines: List[String]) : Vector[Data] = {
-					
-					val splitlines = lines.map(_.split(" "))
-					//urn:fau:0x000a: MAC 00:12:74:00:0e:d5:30:12 Contiki 2.6 started. Node id is set to 10.
-					val idlines = splitlines.filter(x => {x.size == 12 && x(1).equals("MAC")})
-					//idMap maps the output id to the real node id
-					var idMap = {for(l <- idlines) yield {
-						import DataExtractor._
-						val mid = extract(l(0)).get
-						val id = l(2).split(":").last.hex
-						id -> mid
-					}}.toMap
-					
-					DEuip1_rcv.backupMap ++= idMap
-					
-					//log.debug("IDmap: " + idmap.map(x => {x._1 + " " + x._2}).mkString(", ") )
-					
-					val parselines = splitlines.filter(x => {x.size == 10 && x(2).equals("recv")})
-					
-					val rcvMap = collection.mutable.Map[Int, Int]()
-					for(l <- parselines)  {
-						val src = l(9).toInt
-						val ctr = rcvMap.getOrElse(src, 0)
-						rcvMap += src -> (ctr + 1) 
+	def parse(lines: Iterator[String]): Vector[Data] = {
+		val splitlines = lines.map(Message.fromString).flatten.toList
+		
+		var missKeyReported = false 
+
+		//1234	urn:fau:0x000a	MAC 00:12:74:00:0e:d5:30:12 Contiki 2.6 started. Node id is set to 10.
+		var idMap = {
+			for(Message(time, smote, msg) <- splitlines;
+		                  splitmsg = msg.split(" ");
+				  if splitmsg.size == 11;
+				  if splitmsg(0) == "MAC";
+				  mid <- extract(smote);
+				  id = splitmsg(1).split(":").last.hex
+			) yield id -> mid
+		}.toMap.withDefault { key => 
+			getBackup(key) match {
+				case Some(b) => {
+					if(!missKeyReported) {
+						missKeyReported = true
+						log.debug("Missing key  \""  + key + "\", No more missing keys will be reported for this file")
 					}
-					for(key <- rcvMap.keys) if(!idMap.contains(key)) {
-						val b = getBackup(key)
-						if(b.isDefined) {
-							if(!missKeyReported) {
-								missKeyReported = true
-								log.debug("Missing key  \""  + key + "\" in " + filename +". No more missing keys will be reported for this file.")
-							}
-							idMap = idMap + (key -> b.get)
-						} else {
-							log.error("Missing key  \""  + key + "\" in " + filename + " Could not Recover")
-							return Vector[Data]()
-						}
-					}
-					DEuip1_rcv.backupMap.map(x => new Result(x._2,"meta_packrcv", rcvMap.getOrElse(x._1, 0).toLong)).toVector
-					rcvMap.map(x => new Result(idMap(x._1),"meta_packrcv", x._2)).toVector
-				}
+					b }
+				case None => 
+					{ log.error("Missing key  \""  + key + "\" Could not Recover"); return NilVD } 
 			}
-				
 		}
-		else 
-			Dont
-	} 
+		
+		DEuip1_rcv.backupMap ++= idMap
+		
+		//log.debug("IDmap: " + idMap.map(x => {x._1 + " " + x._2}).mkString(", ") )
+		
+		val rcvMap = collection.mutable.Map[Int, Int]().withDefaultValue(0)
+		val parselines = for(Message(time, smote, msg) <- splitlines;
+		                  splitmsg = msg.split(" ");
+				  if splitmsg.size == 8;
+				  if splitmsg(1) == "recv"
+			      ) rcvMap(splitmsg(7).toInt) += 1
+		
+		rcvMap.map { case (id, cnt) => new Result(idMap(id), "meta_packrcv", cnt) }.toVector
+		// TODO
+		//val results = for((id, mid) <- DEuip1_rcv.backupMap) yield Result(mid, "meta_packrcv", rcvMap.getOrElse(mid, 0).toLong)
+		//results.toVector
+	}
+
 }
 
 object DEuip1_rcv{
@@ -69,6 +62,7 @@ object DEuip1_rcv{
 	val backupMap:collection.concurrent.Map[Int, Int] = new java.util.concurrent.ConcurrentHashMap[Int, Int]()
 }
 
-trait DEuip1_rcvSim extends DEuip1_rcv {
-	override def getBackup(id:Int):Option[Int] = Some(id)
+class DEuip1_rcvWB extends DEuip1_rcv with WisebedExtractor
+class DEuip1_rcvSim extends DEuip1_rcv with SimulationExtractor {
+	override def getBackup(id:Int) = Some(id)
 }

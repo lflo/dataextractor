@@ -1,4 +1,3 @@
-
 package de.fau.dryrun.dataextractor
 
 import scala.io.Source
@@ -12,11 +11,6 @@ import scopt.mutable.OptionParser
 import scopt.mutable.OptionParser._
 import java.text.SimpleDateFormat
 import java.util.Date
-
-
-
-
-
 
 object DataCollector {
 	val data = collection.mutable.Map[String, Experiment]()
@@ -108,120 +102,71 @@ object DataCollector {
 		log.info("Timeframe: " + dp.format(sDate) + " - " + dp.format(eDate))
 		//log.debug("Keys: " +  resKeys.mkString(", "))
 		
-		
+
 		if(dryRun) {
 			log.info("No output")
 			sys.exit(0)
 		}
 		
-		val outname = {if(outfile.length > 1) outfile else folder.toString}
+		val outname = if(outfile.length > 1) outfile else folder.toString
 		
+
+		// write output file containing results from given function	
+		def output(name: String, fileSuffix: String, columns: Seq[String])
+		          (f: Experiment => Iterable[Iterable[String]]) = {
+			log.info("Wrinting " + name)
+
+			val header = configs ++ columns
+			val ColCount = header.size
+
+			val oLines = for(exp <- experiments) yield {
+				val conf = configs map { c => exp.config get c getOrElse "null" }
+				f apply exp map { rv => (rv.size + conf.size) match {
+					case ColCount => conf ++ rv
+					case s @ _ => {	log.error("Wrong Size: " + s + " != " + ColCount + " !"); Nil }
+				}}
+			}
+
+			if(oLines.size > 0) {
+				val ofile = new java.io.PrintWriter(new File(outname + "." + fileSuffix))
+				ofile.println(header.mkString(sep)) 
+				for(line <- oLines.flatten) ofile.println(line.mkString(sep))
+				ofile.close
+			} else
+				log.info("No " + name)
+		}
 		
 		
 		//Stacked results
-		log.info("Wrinting stacked results");
-		;{
+		output("stacked results", "res.stacked", List(nodeStr, "key", "value")) { exp => 
+			for(res <- exp.results) yield res.toList
+		}
 
-			val header = configs ::: List(nodeStr, "key", "value")
-			val oLines = for(exp <- experiments) yield{
-				val pres = configs.map(exp.config.getOrElse(_, "null")).mkString("", sep, sep)
-				for(res <- exp.results) yield {
-					pres + res.stackList.mkString(sep)
-				}
-			}
-			if(oLines.size > 0) {
-				val outfile = new java.io.PrintWriter(new File(outname + ".res.stacked"))
-				outfile.println(header.mkString(sep)) 
-				outfile.println(oLines.view.flatten.mkString("\n"))
-				outfile.close
-			} else {
-				log.info("No Stacked results")
-			}
-		}
-		
 		//Stacked experiment results
-		log.info("Wrinting stacked expriment results");
-		;{
-			val header = configs ::: List("key", "value")
-			val oLines = for(exp <- experiments) yield {
-				val pres = configs.map(exp.config.getOrElse(_, "null")).mkString("", sep, sep)
-				val rv = for(res <- exp.expResults) yield {
-					pres + res.stackList.mkString(sep)
-				}
-				rv
-			}
-			if(oLines.size > 0) {
-				val outfile = new java.io.PrintWriter(new File(outname + ".res.exp_stacked"))
-				outfile.println(header.mkString(sep))
-				outfile.println(oLines.view.flatten.mkString("\n"))
-				outfile.close
-			}else {
-				log.info("No Stacked experiment results")
-			}
+		output("stacked experiment results", "res.exp_stacked", List("key", "value")) { exp => 
+			for(res <- exp.expResults) yield res.toList
 		}
-		
+
 		//Unstacked results
-		log.info("Wrinting unstacked results");
-		;{
-			val header =  configs ::: List(nodeStr) ::: resKeys
-			val olines = for(exp <- experiments ; (node, dat) <- exp.resultsNodeKeyValueMap) yield {
-					val rv:List[String] = configs.map(exp.config.getOrElse(_, "null")) ::: 
-							List(node.toString)	:::
-							resKeys.map(dat.getOrElse(_, "null").toString)
-					if(rv.size != header.size) {
-						log.error("Wrong Size!")
-						log.error("RV: " + rv.size +"H: " +header.size + " C: " + configs.size + " R: " + resKeys.size)
-					}
-							
-					rv
-			}
-			if(olines.size > 0) {
-				val outfile = new java.io.PrintWriter(new File(outname + ".res.unstacked"))				 
-				outfile.println(header.mkString(sep))
-				outfile.print(olines.map(_.mkString(sep)).mkString("\n"))			
-				outfile.close
-			}else {
-				log.info("No unstacked results")
-			}
+		output("unstacked results", "res.unstacked", List(nodeStr) ++ resKeys) { exp => 
+			for((node, dat) <- exp.resultsNodeKeyValueMap) yield
+				Seq(node.toString) ++ resKeys.map(dat.getOrElse(_, "null").toString)
+		}
+
+		//Unstacked experiment results
+		output("unstacked experiment results", "res.exp_unstacked", expResKeys) { exp => 
+			val dat = exp.expResultsKeyValueMap
+			Seq(expResKeys.map(dat.getOrElse(_, "null").toString))
 		}
 		
-		//Unstacked results
-		log.info("Wrinting unstacked Experiment results");
-		;{
-			val header =  configs ::: expResKeys
-			val olines = for(exp <- experiments ) yield {
-					val dat = exp.expResultsKeyValueMap
-					val rv = configs.map(exp.config.getOrElse(_, "null")) ::: 
-							expResKeys.map(dat.getOrElse(_, "null"))
-					if(rv.size != header.size) {
-						log.error("Wrong Size!")
-						log.error("RV"+rv.size +"H: " +header.size + " C: " + configs.size + " R: " + resKeys.size)
-					}
-							
-					rv
-			}
-			if(olines.size > 0) {
-				val outfile = new java.io.PrintWriter(new File(outname + ".res.exp_unstacked"))				 
-				outfile.println(header.mkString(sep))
-				outfile.print(olines.map(_.mkString(sep)).mkString("\n"))			
-				outfile.close
-			}else {
-				log.info("No unstacked results")
-			}
-		}
-		
-		
+		//R information
 		log.info("Export Information to read in R")
-		;{
-			val outfile = new java.io.PrintWriter(new File(outname + ".res.r_inputs"))
-			outfile.println({configs ::: List(nodeStr)}.mkString(" ") )
-			outfile.close
-			
-		}
+		val ofile = new java.io.PrintWriter(new File(outname + ".res.r_inputs"))
+		ofile.println( (configs ++ List(nodeStr)).mkString(" ") )
+		ofile.close
 		
 		log.info("Done")
-		
-		
+			
 	}
 
 }

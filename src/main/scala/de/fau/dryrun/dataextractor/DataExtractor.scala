@@ -1,4 +1,3 @@
-
 /**
  * Extract Data
  */
@@ -15,134 +14,97 @@ import scala.collection.mutable.Buffer
 import collection.JavaConversions._
 import java.util.Date
 
-sealed abstract class Data {
-	def stackList:List[String]
+
+
+sealed abstract class Data extends Product {
+	def toList = productIterator.map(_.toString).toList
 	var timeStamp:Option[Date] = None
+	def withTimeStamp(time: Date) = {
+		timeStamp = Some(time)
+		this
+	}
 }
-class ExpResult(val k:String, val v:Long) extends Data {
-	def stackList = List[String](k, v.toString)
+case class ExpResult(k:String, v:Long) extends Data
+case class Result(node:Int, k:String, v:Long) extends Data
+//case class ExpSnapshot(time:Long, k:String, v:Long) extends Data
+//case class Snapshot(node:Int, time:Long, k:String, val v:Long) extends Data
+
+// Provide a Nil for Vector[Data] for convenience
+object Data {
+	val NilVD = Vector[Data]()
 }
-
-class Result(val node:Int, val k:String, val v:Long) extends Data {
-	def stackList = List[String](node.toString, k, v.toString)
-}
+import Data.NilVD
 
 
-
-//TODO
-//class ExpSnapshot(val time:Long, val k:String, val v:Long) extends Data
-//class Snapshot(val node:Int, val time:Long, val k:String, val v:Long) extends Data
-
-
-
+/** Abstract data extractor */
 abstract class DataExtractor {	
-	class FileExtractor {
-		def ok:Boolean = true
-	}
-	abstract case class Lines() extends FileExtractor { //Pass all lines
-		def parse(lines: List[String]) : Vector[Data]
-	} 
-	abstract case class Linear() extends FileExtractor { //Pass lines linear
-		def parse(line:String):Vector[Data]
-	}
-	abstract case class Parallel() extends FileExtractor { // Pass lines in parallel
-		def parse(line:String):Vector[Data]
-	}
-	case object Dont extends FileExtractor //Dont parse file
-		
-	protected def getFileExtractor(file:File):FileExtractor = Dont
+	/** Extract given file */
+	def extractFile(file:File):Vector[Data]
 	
-	
-
-	
-	/*
-	 * This function allows to parse the file first and then decide whether this was a valid extractor
-	 */
-	def ok = true
-	
-	def extractFile(file:File):Vector[Data] = {
-		val fe = getFileExtractor(file) 
-		val rv = fe match {
-			case ec:Lines => ec.parse(Source.fromFile(file).getLines.toList); 
-			case ec:Linear => Source.fromFile(file).getLines.foldLeft(Vector[Data]())(_ ++ ec.parse(_))
-			case ec:Parallel => Source.fromFile(file).getLines.toStream.par.aggregate(Vector[Data]())(_ ++ ec.parse(_), _ ++ _)
-			//case ec:Parallel => Source.fromFile(file).getLines.foldLeft(Buffer[Data]())(_ ++ ec.parse(_)).toVector
-			case Dont => Vector[Data]() 
-		}
-		if(fe.ok == true) {
-			val timeStamp = Some(new Date(file.lastModified))
-			//TODO IF there is a timestamp from the raw data we should use that!
-			rv.foreach(_.timeStamp = timeStamp)
-			rv
+	/** Extract file or folder and combine results */
+	def extract(file:File):Vector[Data] = {
+		if(DataExtractor.isDir(file)) {
+			DataExtractor.getDirList(file).par.aggregate(NilVD)( (list, f) =>
+				list ++ extract(f)
+			, _ ++ _)
 		} else {
-			Vector[Data]()
+			val modified = new Date(file.lastModified)
+			// TODO: IF there is a timestamp from the raw data we should use that!
+			extractFile(file) map { _.withTimeStamp(modified) } 
 		}
-		
 	}
-	
-	def extractDir(dir:File):Vector[Data] = {
-		val files = DataExtractor.getDirList(dir)
-		val rv = files.par.aggregate(Vector[Data]())( (list, file) => {
-			list ++ {
-				if(DataExtractor.isDir(file)) {
-					extractDir(file)
-				} else {
-					extractFile(file)
-				}
-			}
-		}, _ ++ _)
-		
-		if(ok) rv else Vector[Data]() 
-	}
-	def apply():DataExtractor =  throw new Exception("DataExtractor has no Factory")
 }
 
+/** Mixin to only extract files matching given pattern */
+trait FileExtractor extends DataExtractor {
+	def filenamePattern: String
+
+	abstract override def extractFile(file:File) =
+		if(file.getName matches filenamePattern)
+			super.extractFile(file)
+		else
+			NilVD
+}
+
+/** Mixin to modify/check results after reading the file */
+trait FinishExtractor extends DataExtractor {
+	def finish(res: Vector[Data]): Vector[Data]
+
+	abstract override def extractFile(file:File) = 
+		finish(super.extractFile(file))
+}
+
+/** Extract file as a Iterator of lines */
+trait LineExtractor extends DataExtractor {
+	def parse(lines: Iterator[String]): Vector[Data]
+
+	def extractFile(file:File) = parse(Source.fromFile(file).getLines)
+}
+
+/** Extract file by extracting individual lines */
+trait LinearLineExtractor extends LineExtractor {
+	def parseLine(line: String): Vector[Data]
+
+	def parse(lines: Iterator[String]) = lines.foldLeft(NilVD)(_ ++ parseLine(_))
+}
+
+/** Extract file by extracting individual lines in parallel */
+trait ParallelLineExtractor extends LinearLineExtractor {
+	override def parse(lines: Iterator[String]) = lines.toStream.par.aggregate(NilVD)(_ ++ parseLine(_), _ ++ _)
+}
+
+
+// Filesystem caching
 object DataExtractor{
-	import scala.language.implicitConversions
-	
-	val log = LoggerFactory.getLogger(this.getClass)
-	val listMap: collection.concurrent.Map[java.io.File, Array[java.io.File]] = new java.util.concurrent.ConcurrentHashMap[java.io.File,Array[java.io.File]]
-	def getDirList(dir:java.io.File) = {
-		listMap.getOrElseUpdate(dir, dir.listFiles)
-	}
-	val dirMap: collection.concurrent.Map[java.io.File, Boolean] = new java.util.concurrent.ConcurrentHashMap[java.io.File,Boolean]
-	def isDir(file:java.io.File) = {
-		dirMap.getOrElseUpdate(file, file.isDirectory)
-	}
-	
-	class HexString(val s: String) {
-		def hex:Int = {
-			if(s.startsWith("0x")) {
-				Integer.parseInt(s.drop(2), 16)	
-			} else {
-				Integer.parseInt(s, 16)
-			}
-		}
-	}
-	
-	implicit def str2hex(str: String): HexString = new HexString(str)
-	
-	class MoteID(val id: String) extends AnyVal
-	
-	/**
-	 * Extract the id of the node 
-	 */
-	def idExtract(id:String):Option[Int] = {
-		val sp = id.split(":")
-		if(sp(0).equals("urn") || sp(1).equals("urn")) {
-			return Some(sp.last.hex)
-		} 
-		
-		//log.info("Not urn, but -"  + id + "-" )
-		None
-	}
-	
-	def apply():DataExtractor =  throw new Exception("DataExtractor has no Factory")
+	val listMap: collection.concurrent.Map[File, Array[File]] = new java.util.concurrent.ConcurrentHashMap[File,Array[File]]
+	def getDirList(dir:File) = listMap.getOrElseUpdate(dir, dir.listFiles)
+
+	val dirMap: collection.concurrent.Map[File, Boolean] = new java.util.concurrent.ConcurrentHashMap[File,Boolean]
+	def isDir(file:File) = dirMap.getOrElseUpdate(file, file.isDirectory)
 }
 
 
-
-
+/** Experiment contained in subdirectory */
 class Experiment(dir: File) {
 	val log = LoggerFactory.getLogger(this.getClass)
 	//log.debug("Parsing " + dir)
@@ -150,29 +112,22 @@ class Experiment(dir: File) {
 	
 	
 	val extractors:List[Unit => DataExtractor] = List(
-			Unit => {new DEuip1},
-			Unit => {new DEuip1 with DEuipSim1},
-			Unit => {new DEuip1_rcv},
-			Unit => {new DEuip1_rcv with DEuipSim1 with DEuip1_rcvSim}, 
+			Unit => {new DEuipWB1},
+			Unit => {new DEuipSim1},
+			Unit => {new DEuip1_rcvWB},
+			Unit => {new DEuip1_rcvSim}, 
 			Unit => {new DEsizes}
 	)
 	
 	val config = Source.fromFile(dir.toString +"/conf.txt").getLines.map(_.split("=", 2)).map(e => e(0) -> e(1)).toMap		
 	
 	//Handle dir with every extractor
-	val data = extractors.par.aggregate(Vector[Data]())(_ ++ _().extractDir(dir), _ ++ _)
+	val data = extractors.par.aggregate(NilVD)(_ ++ _().extract(dir), _ ++ _)
 	
-	val (start, end) =  data.foldLeft(new Date(Long.MaxValue) -> new Date(0))((dt, x) => {
-		var s = dt._1
-		var e = dt._2
-		x.timeStamp match{
-			case Some(ts) => {
-				if(s.after(ts)) s = ts
-				if(e.before(ts)) e = ts
-			} 
-		}
-		s -> e
-	})
+	val (start, end) = data.map(_.timeStamp).foldLeft(new Date(Long.MaxValue), new Date(0)) {
+		case ((min, max), Some(ts)) => (if(ts before min) ts else min, if(ts after max) ts else max)
+		case ((min, max), None) => (min, max)
+	}
 	
 	//Prepare results
 	val results:Vector[Result] =  data.view.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result]).toVector
