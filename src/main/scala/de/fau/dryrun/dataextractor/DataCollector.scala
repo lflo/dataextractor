@@ -67,6 +67,7 @@ object DataCollector {
 		log.info("Wrinting stacked results");
 		;{
 
+			val header = configs ::: List("mote", "key", "value")
 			val oLines = for(exp <- experiments) yield{
 				val pres = configs.map(exp.config.getOrElse(_, "null")).mkString("", sep, sep)
 				for(res <- exp.results) yield {
@@ -75,7 +76,8 @@ object DataCollector {
 			}
 			if(oLines.size > 0) {
 				val outfile = new java.io.PrintWriter(new File(outname + ".res.stacked"))
-				outfile.println(oLines.mkString("\n"))
+				outfile.println(header.mkString(sep)) 
+				outfile.println(oLines.view.flatten.mkString("\n"))
 				outfile.close
 			} else {
 				log.info("No Stacked results")
@@ -85,15 +87,18 @@ object DataCollector {
 		//Stacked experiment results
 		log.info("Wrinting stacked expriment results");
 		;{
+			val header = configs ::: List("key", "value")
 			val oLines = for(exp <- experiments) yield {
 				val pres = configs.map(exp.config.getOrElse(_, "null")).mkString("", sep, sep)
-				for(res <- exp.expResults) yield {
+				val rv = for(res <- exp.expResults) yield {
 					pres + res.stackList.mkString(sep)
 				}
+				rv
 			}
 			if(oLines.size > 0) {
 				val outfile = new java.io.PrintWriter(new File(outname + ".res.exp_stacked"))
-				outfile.println(oLines.mkString("\n"))
+				outfile.println(header.mkString(sep))
+				outfile.println(oLines.view.flatten.mkString("\n"))
 				outfile.close
 			}else {
 				log.info("No Stacked experiment results")
@@ -105,9 +110,9 @@ object DataCollector {
 		;{
 			val header =  configs ::: List("node") ::: resKeys
 			val olines = for(exp <- experiments ; (node, dat) <- exp.resultsNodeKeyValueMap) yield {
-					val rv = configs.map(exp.config.getOrElse(_, "null")) ::: 
+					val rv:List[String] = configs.map(exp.config.getOrElse(_, "null")) ::: 
 							List(node.toString)	:::
-							resKeys.map(dat.getOrElse(_, "null"))
+							resKeys.map(dat.getOrElse(_, "null").toString)
 					if(rv.size != header.size) {
 						log.error("Wrong Size!")
 						log.error("RV: " + rv.size +"H: " +header.size + " C: " + configs.size + " R: " + resKeys.size)

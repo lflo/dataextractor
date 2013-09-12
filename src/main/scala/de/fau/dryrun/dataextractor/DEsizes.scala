@@ -32,7 +32,7 @@ class DEsizes extends DataExtractor {
 					val rv = collection.mutable.Buffer[Data]()
 					for(l <- lines.tail)  {
 						val els = l.split("\t").map(_.trim)
-						log.debug("Ld: " + els.mkString("-","-","-"))
+						//log.debug("Ld: " + els.mkString("-","-","-"))
 						rv += new ExpResult(els(5)+"_txt", els(0).toInt)
 						rv += new ExpResult(els(5)+"_data", els(1).toInt)
 						rv += new ExpResult(els(5)+"_bss", els(2).toInt)

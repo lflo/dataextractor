@@ -69,10 +69,10 @@ abstract class DataExtractor {
 	}
 	
 	def extractDir(dir:File):Vector[Data] = {
-		val files = DataExtractor.listMap.getOrElseUpdate(dir, dir.listFiles)
+		val files = DataExtractor.getDirList(dir)
 		val rv = files.par.aggregate(Vector[Data]())( (list, file) => {
 			list ++ {
-				if(file.isDirectory) {
+				if(DataExtractor.isDir(file)) {
 					extractDir(file)
 				} else {
 					extractFile(file)
@@ -89,7 +89,14 @@ object DataExtractor{
 	import scala.language.implicitConversions
 	
 	val log = LoggerFactory.getLogger(this.getClass)
-	val listMap: collection.concurrent.Map[java.io.File, Array[java.io.File]] = new java.util.concurrent.ConcurrentHashMap[java.io.File,Array[java.io.File]] 
+	val listMap: collection.concurrent.Map[java.io.File, Array[java.io.File]] = new java.util.concurrent.ConcurrentHashMap[java.io.File,Array[java.io.File]]
+	def getDirList(dir:java.io.File) = {
+		listMap.getOrElseUpdate(dir, dir.listFiles)
+	}
+	val dirMap: collection.concurrent.Map[java.io.File, Boolean] = new java.util.concurrent.ConcurrentHashMap[java.io.File,Boolean]
+	def isDir(file:java.io.File) = {
+		dirMap.getOrElseUpdate(file, file.isDirectory)
+	}
 	
 	class HexString(val s: String) {
 		def hex:Int = {
