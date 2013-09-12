@@ -22,7 +22,7 @@ class DEuip1 extends DataExtractor {
 			List("drop", "recv", "sent", "chkerr").map("udp_" + _) :::
 			List("drop", "recv", "sent").map("nd6_" + _)
 			
-	val egt = List("CPU", "PM", "TX", "RX").map("ener_" + _)
+	val egt = List("CPU", "LPM", "TX", "RX").map("ener_" + _)
 	
 	
 	def extract(s:String) = idExtract(s)
