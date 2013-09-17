@@ -116,9 +116,11 @@ object DataExtractor{
 	 * Extract the id of the node 
 	 */
 	def idExtract(id:String):Option[Int] = {
-		if(id.startsWith("urn:")) {
-			return Some(id.split(":").last.hex)
+		val sp = id.split(":")
+		if(sp(0).equals("urn") || sp(1).equals("urn")) {
+			return Some(sp.last.hex)
 		} 
+		
 		//log.info("Not urn, but -"  + id + "-" )
 		None
 	}
