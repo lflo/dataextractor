@@ -13,9 +13,11 @@ import ExecutionContext.Implicits.global
 import scala.concurrent.duration.Duration
 import scala.collection.mutable.Buffer
 import collection.JavaConversions._
+import java.util.Date
 
 sealed abstract class Data {
 	def stackList:List[String]
+	var timeStamp:Option[Date] = None
 }
 class ExpResult(val k:String, val v:Long) extends Data {
 	def stackList = List[String](k, v.toString)
@@ -50,6 +52,9 @@ abstract class DataExtractor {
 		
 	protected def getFileExtractor(file:File):FileExtractor = Dont
 	
+	
+
+	
 	/*
 	 * This function allows to parse the file first and then decide whether this was a valid extractor
 	 */
@@ -64,7 +69,14 @@ abstract class DataExtractor {
 			//case ec:Parallel => Source.fromFile(file).getLines.foldLeft(Buffer[Data]())(_ ++ ec.parse(_)).toVector
 			case Dont => Vector[Data]() 
 		}
-		if(fe.ok == true) rv else Vector[Data]()
+		if(fe.ok == true) {
+			val timeStamp = Some(new Date(file.lastModified))
+			//TODO IF there is a timestamp from the raw data we should use that!
+			rv.foreach(_.timeStamp = timeStamp)
+			rv
+		} else {
+			Vector[Data]()
+		}
 		
 	}
 	
@@ -134,6 +146,7 @@ object DataExtractor{
 class Experiment(dir: File) {
 	val log = LoggerFactory.getLogger(this.getClass)
 	//log.debug("Parsing " + dir)
+	 
 	
 	
 	val extractors:List[Unit => DataExtractor] = List(
@@ -148,6 +161,18 @@ class Experiment(dir: File) {
 	
 	//Handle dir with every extractor
 	val data = extractors.par.aggregate(Vector[Data]())(_ ++ _().extractDir(dir), _ ++ _)
+	
+	val (start, end) =  data.foldLeft(new Date(Long.MaxValue) -> new Date(0))((dt, x) => {
+		var s = dt._1
+		var e = dt._2
+		x.timeStamp match{
+			case Some(ts) => {
+				if(s.after(ts)) s = ts
+				if(e.before(ts)) e = ts
+			} 
+		}
+		s -> e
+	})
 	
 	//Prepare results
 	val results:Vector[Result] =  data.view.filter(_.isInstanceOf[Result]).map(_.asInstanceOf[Result]).toVector
